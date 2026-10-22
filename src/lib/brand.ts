@@ -1,0 +1,1 @@
+export function displayBrand(value:unknown):string{return String(value||'').replace(new RegExp(['LC','Recrutamento'].join(' '),'gi'),'Triatalent').replace(/\bAdmin LC\b/g,'Admin Triatalent').replace(/\bequipe LC\b/g,'equipe Triatalent');}
