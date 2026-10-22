@@ -1,0 +1,5 @@
+TRIATALENT_SIMPLES_GEMINI_V4
+TRIATALENT_CLIENTE_PAGAMENTO_V3
+TRIATALENT_FLUXO_DIRETO_V2
+Duas filas de revisão humana; perguntas objetivas, parecer com currículo e respostas, Gemini opcional e WhatsApp manual.
+Credenciais e funcionamento em contas reais precisam ser configurados e homologados pelo responsável.

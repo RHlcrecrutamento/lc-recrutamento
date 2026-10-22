@@ -1,0 +1,52 @@
+/** Teste LOCAL com dados fictícios. Nunca executar no banco real. */
+const root=process.cwd();require(root+'/node_modules/dotenv').config({path:root+'/.env.local'});if(process.env.MP_ACCESS_TOKEN||process.env.MP_WEBHOOK_SECRET)throw Error('Use ambiente local sem credenciais reais do Mercado Pago. Este teste exige checkout não configurado; pagamentos são simulados na outra suite.');const {openDatabase}=require(root+'/scripts/pg');const crypto=require('crypto');const fs=require('fs');const db=openDatabase();const BASE=process.env.TEST_BASE_URL||'http://localhost:3000';if(!['localhost','127.0.0.1'].includes(new URL(BASE).hostname)||!['localhost','127.0.0.1'].includes(new URL(process.env.DATABASE_URL).hostname))throw Error('Teste bloqueado: somente banco e servidor locais, nunca Render/Supabase.');const tag=Date.now();let n=0;function check(name,cond){if(!cond)throw Error(name);console.log('✔ '+name);n++;}function jar(){let cookie='';return async(path,body,method=body===undefined?'GET':'POST')=>{const r=await fetch(BASE+path,{method,headers:{'Content-Type':'application/json',Origin:BASE,Cookie:cookie},...(body===undefined?{}:{body:JSON.stringify(body)})});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];const text=await r.text();let json;try{json=JSON.parse(text);}catch{}return{status:r.status,json,text};};}const admin=jar(),client=jar(),other=jar(),candidate=jar(),anon=jar();
+(async()=>{
+ for(const [api,email,password,portal] of [[admin,'admin@lcrecrutamento.com.br','Admin@123','equipe'],[client,'cliente@technova.com.br','Cliente@123','empresa'],[other,'cliente@redesaude.com.br','Cliente@123','empresa']]){const r=await api('/api/auth/login',{email,password,portal});check('Login '+email,r.status===200);}
+ const data={title:'Vaga fictícia benefícios '+tag,description:'Descrição mantida',objectives:'Objetivo mantido',education:'Ensino médio',courses:'Curso teste',experience:'não deve ser salvo',competencies:'remover',requirements_desirable:'remover',is_public:1,salary_min:300000,salary_max:450000,salary_disclosed:0,benefits_config:{extras:['Comissões'],offered:['Vale Refeição','Vale Alimentação','Outro'],other:'Academia',meal_vr_cents:3500,meal_va_cents:60000,meal_period:'mes'}};
+ let r=await client('/api/vagas',{...data,benefits_config:{...data.benefits_config,meal_vr_cents:null}});check('VR escolhido exige valor no servidor',r.status===400);
+ r=await client('/api/vagas',{...data,benefits_config:{...data.benefits_config,meal_va_cents:null}});check('VA escolhido exige seu próprio valor',r.status===400);
+ r=await client('/api/vagas',{...data,benefits_config:{...data.benefits_config,other:''}});check('Outro escolhido exige descrição',r.status===400);
+ r=await client('/api/vagas',{...data,salary_max:250000});check('Salário máximo menor é rejeitado',r.status===400);
+ r=await client('/api/vagas',{...data,benefits_config:{...data.benefits_config,offered:['Benefício inventado']}});check('Enum inválido rejeitado',r.status===400);
+ r=await client('/api/vagas',data);check('Criação com benefícios válidos',r.status===201);const jobId=r.json.data.id;
+ let job=await db.prepare('SELECT * FROM jobs WHERE id=?').get(jobId);
+ check('Salário persiste em centavos, equivalente a R$ 3.000,00',job.salary_min===300000&&job.salary_max===450000);
+ check('Descrição, objetivo, escolaridade e cursos mantidos',job.description===data.description&&job.objectives===data.objectives&&job.education===data.education&&job.courses===data.courses);
+ check('Somente os três campos retirados não são gravados pelo cliente',!job.experience&&!job.competencies&&!job.requirements_desirable);
+ check('Divulgação de salário respeita Não',job.salary_disclosed===0);
+ check('Valores VR/VA e extras persistidos',JSON.parse(job.benefits_config_json).meal_vr_cents===3500&&job.benefits.includes('600,00')&&job.benefits.includes('Comissões'));
+ r=await client('/api/vagas/'+jobId,{salary_min:320000,benefits_config:{extras:[],offered:[],other:'',meal_period:'dia'}},'PUT');check('Edição permite nenhum benefício sem exigir vale',r.status===200);
+ r=await other('/api/vagas/'+jobId,{title:'Invasão'},'PUT');check('Outra empresa não altera a vaga',r.status===403);
+ await db.prepare("UPDATE jobs SET status='aprovada' WHERE id=?").run(jobId);
+ const email='curriculo-'+tag+'@example.test';const original=`Pessoa Fictícia Currículo\n${email}\n(31) 99888-7766\nEndereço: Rua Teste, 100\nCPF: 123.456.789-00\nhttps://linkedin.com/in/pessoaficticia\nEnsino médio completo. Cinco anos de atendimento ao cliente e organização de estoque. Curso de informática.`;
+ r=await candidate('/api/auth/cadastro',{name:'Pessoa Fictícia Currículo',email,password:'Curriculo@2026',phone:'(31) 99888-7766',resume_text:original});check('Cadastro aceita currículo colado',r.status===201);const cid=r.json.data.candidate_id;
+ const c=await db.prepare('SELECT * FROM candidates WHERE id=?').get(cid);check('Currículo original guardado somente no perfil interno',c.resume_text===original);
+ r=await candidate('/api/candidaturas/inscricao',{job_id:jobId});check('Currículo não impede entrevista direta',r.status===201||r.status===200);const appId=r.json.data.application_id;
+ const iv=await db.prepare('SELECT * FROM interviews WHERE application_id=?').get(appId);await db.prepare("UPDATE interviews SET status='concluida' WHERE id=?").run(iv.id);
+ const reportId='rpt_resume_'+tag;await db.prepare("INSERT INTO reports(id,application_id,interview_id,status,reviewed_by,reviewed_at) VALUES(?,?,?,'validado',?,datetime('now'))").run(reportId,appId,iv.id,'usr_admin');
+ r=await admin('/api/relatorios/'+reportId+'/liberar',{});check('Endpoint antigo não contorna nova revisão simples',r.status===409);
+ const sourceHash=crypto.createHash('sha256').update(JSON.stringify([c.resume_text||'',c.name,c.email,c.phone,c.whatsapp,c.cpf,c.address])).digest('hex');const publicText='Ensino médio completo. Cinco anos de atendimento ao cliente e organização de estoque. Curso de informática.';
+ r=await client('/api/candidatos/'+cid+'/curriculo-publico',{public_text:publicText,source_hash:sourceHash,reviewed:true});check('Cliente não revisa/publica currículo',r.status===403);
+ r=await admin('/api/candidatos/'+cid+'/curriculo-publico',{public_text:publicText,source_hash:sourceHash,reviewed:false});check('Exige confirmação de revisão humana',r.status===400);
+ r=await admin('/api/candidatos/'+cid+'/curriculo-publico',{public_text:original,source_hash:sourceHash,reviewed:true});check('Dados pessoais conhecidos bloqueados no currículo público',r.status===400);
+ r=await admin('/api/candidatos/'+cid+'/curriculo-publico',{public_text:publicText,source_hash:'velho',reviewed:true});check('Hash antigo impede revisão de versão diferente',r.status===409);
+ r=await admin('/api/candidatos/'+cid+'/curriculo-publico',{public_text:publicText,source_hash:sourceHash,reviewed:true});check('Revisão anonimizada é salva pela equipe',r.status===200);
+ r=await admin('/api/triagem/candidatos/'+appId,{decision:'aprovado',reviewed:true,source_hash:sourceHash,public_resume:publicText,presentation:'Apresentação profissional de atendimento, com formação de ensino médio.',essential_answers:[],work_history:[]});check('Após revisão currículo e relatório podem ser liberados',r.status===200);
+ r=await client('/api/cliente/candidatos/'+appId);check('Cliente recebe o currículo revisado completo',r.status===200&&r.json.data.candidate.resume_text===publicText);
+ check('API não devolve original, nome, e-mail, telefone, CPF ou link pessoal',![email,'Pessoa Fictícia Currículo','99888-7766','123.456.789-00','linkedin.com','Rua Teste'].some(x=>r.text.includes(x))&&!r.json.data.candidate.contact.unlocked);
+ r=await client('/cliente/candidato/'+appId);check('Página contém currículo revisado, não dados do original',r.status===200&&r.text.includes(publicText)&&!r.text.includes(email)&&!r.text.includes('99888-7766'));
+ check('Aprovação/reprovação explícita sem exigir entrevista ou contratação',r.text.includes('Aprovar candidato e seguir para pagamento')&&r.text.includes('Reprovar candidato')&&!r.text.includes('Solicitar entrevista'));
+ r=await other('/api/cliente/candidatos/'+appId);check('Outra empresa não vê currículo ou candidato',r.status===404);
+ r=await client('/api/cliente/interesse',{application_id:appId,action:'decisao',decisao:'aprovado'});check('Cliente aprova explicitamente antes de pagar',r.status===200);
+ r=await client('/api/pagamentos/pedido',{application_id:appId,amount_cents:1});check('Sem MP não há fallback para demo nem liberação',r.status===503&&r.json.error.includes('configur'));
+ check('Sem configuração nenhum pedido demonstrativo é criado',Number((await db.prepare('SELECT COUNT(*) n FROM orders WHERE application_id=?').get(appId)).n)===0);
+ r=await anon('/api/pagamentos/webhook?data.id=123&type=payment',{type:'payment',data:{id:'123'},status:'approved'});check('Webhook sem assinatura não confirma pagamento',r.status===401);
+ r=await candidate('/api/candidatos/'+cid,{resume_text:original+'\nNova experiência.'},'PUT');check('Candidato atualiza seu currículo',r.status===200);
+ r=await client('/api/cliente/candidatos/'+appId);check('Alterar original invalida versão revisada até nova revisão',r.json.data.candidate.resume_text===null);
+ // Retorna o original para permitir os testes de pagamento e navegador na mesma fixture.
+ await db.prepare('UPDATE candidates SET resume_text=? WHERE id=?').run(original,cid);
+ r=await client('/cliente');check('Três cards têm destinos diretos e Investido foi removido',r.text.includes('/cliente/vagas?status=ativas')&&r.text.includes('/cliente/candidatos')&&r.text.includes('/cliente/desbloqueios')&&!r.text.includes('Investido (R$)'));
+ r=await client('/cliente/desbloqueios');check('Página de desbloqueios disponível para cliente',r.status===200);
+ fs.mkdirSync(root+'/test-results',{recursive:true});fs.writeFileSync(root+'/test-results/cliente-fixture.json',JSON.stringify({jobId,candidateId:cid,applicationId:appId,reportId,email,original,publicText}));
+ console.log('\n'+n+' verificações da atualização aprovadas. Dados e contas fictícios locais.');
+})().catch(e=>{console.error('FALHOU',e);process.exitCode=1;}).finally(()=>db.close());

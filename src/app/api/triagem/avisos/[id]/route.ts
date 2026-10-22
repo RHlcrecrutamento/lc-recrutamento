@@ -1,0 +1,5 @@
+import { requireUser } from '@/lib/auth';
+import { assertSameOrigin } from '@/lib/access-security';
+import { db,audit } from '@/lib/db';
+import { readJson,ok,fail,handleApiError } from '@/lib/http';
+export async function POST(req:Request,{params}:{params:Promise<{id:string}>}){try{assertSameOrigin(req);const u=await requireUser(['ADMIN','RECRUTADOR']);const b=await readJson(req,1000);if(b.confirmed!==true)return fail('Confirme que você realizou o envio manual.',400);const d=await db.prepare('SELECT * FROM notification_drafts WHERE id=?').get((await params).id);if(!d)return fail('Aviso não encontrado.',404);await db.prepare("UPDATE notification_drafts SET confirmed_at=COALESCE(confirmed_at,datetime('now')),confirmed_by=COALESCE(confirmed_by,?) WHERE id=?").run(u.id,d.id);await audit(u.id,'whatsapp_envio_informado_pelo_operador','notification_drafts',d.id);return ok({msg:'Envio informado pelo operador. O sistema não tem confirmação de entrega ou leitura do WhatsApp.'});}catch(e){return handleApiError(e);}}
