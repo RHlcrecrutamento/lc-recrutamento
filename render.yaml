@@ -1,0 +1,44 @@
+# ============================================================
+#  Configuração automática de publicação no Render.com
+#  (plataforma gratuita de hospedagem)
+#
+#  Quando você conecta o repositório GitHub no Render e escolhe
+#  "Blueprint", ele lê este arquivo e cria o serviço sozinho.
+# ============================================================
+
+services:
+  - type: web
+    name: lc-recrutamento
+    runtime: node
+    plan: free
+    region: ohio
+    # O "npm run setup" no final cria as tabelas do banco. Ele é SEGURO de
+    # rodar toda vez (só cria o que não existe — não apaga nada).
+    # "npm run seed" é destrutivo e exclusivo de testes LOCAIS. Nunca use na nuvem.
+    buildCommand: npm install && npm run build && npm run setup
+    startCommand: npm start
+    healthCheckPath: /api/saude
+    autoDeploy: true
+    envVars:
+      # Versão do Node usada no servidor
+      - key: NODE_VERSION
+        value: "24"
+
+      # ENDEREÇO DO BANCO DE DADOS — você cola aqui o que o Supabase mostrar
+      # (o "sync: false" faz o Render perguntar o valor em vez de deixar em branco)
+      - key: DATABASE_URL
+        sync: false
+
+      # Endereço público do site (ex.: https://lc-recrutamento.onrender.com)
+      - key: APP_URL
+        sync: false
+
+      # Chave secreta das sessões — o Render gera uma aleatória sozinho
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # Gemini fica desligado. Configure depois, somente com política de dados válida.
+      - key: GEMINI_RECRUITMENT_ENABLED
+        value: "false"
+      # Não há seed/reset nem credenciais opcionais obrigatórias neste arquivo.
+      # Para Mercado Pago e Gemini, use Environment conforme os guias V4.

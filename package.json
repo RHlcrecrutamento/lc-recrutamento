@@ -1,0 +1,46 @@
+{
+  "name": "triatalent-ats",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Triatalent — Recrutamento, entrevistas e gestão de talentos",
+  "engines": {
+    "node": ">=20.9.0 <25"
+  },
+  "scripts": {
+    "dev": "node node_modules/next/dist/bin/next dev -H 0.0.0.0",
+    "build": "node node_modules/next/dist/bin/next build",
+    "start": "node node_modules/next/dist/bin/next start -H 0.0.0.0",
+    "setup": "node scripts/setup.js",
+    "seed": "node scripts/seed.js",
+    "test:flow": "node scripts/test-flow.js",
+    "test:security": "node scripts/test-security.js",
+    "prebuild": "node scripts/verificar-atualizacao.js",
+    "test:client": "node scripts/test-client-updates.js && node scripts/test-mercadopago.js",
+    "test:simple": "node scripts/test-simple-review.js",
+    "test:gemini": "node scripts/test-gemini.js"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "dotenv": "^18.0.8",
+    "mammoth": "1.13.0",
+    "next": "15.5.28",
+    "pg": "^8.23.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "unpdf": "1.6.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "20.16.11",
+    "@types/pg": "^8.23.1",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.5.31",
+    "tailwindcss": "3.4.13",
+    "typescript": "5.6.3"
+  },
+  "overrides": {
+    "postcss": "$postcss"
+  }
+}
